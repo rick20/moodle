@@ -40,8 +40,8 @@ services:
         labels:
             - 'docker-volume-backup.stop-during-backup=true'
         command: >
-            bash -c "apt-get update && sh /tmp/packagecheck.sh 'git zip unzip libpcre3-dev cron nano' && curl -sSL https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions -o - | sh -s gd mysqli intl zip xmlrpc soap exif opcache && if pecl install -p -- redis; then pecl install -o -f redis && rm -rf /tmp/pear && docker-php-ext-enable redis; fi; 
-            if [ -z \"$$(ls -A ${WEBSERVER_DOC_ROOT}/moodle/config.php)\" ]; then git clone --depth 1 -b MOODLE_403_STABLE git://git.moodle.org/moodle.git && php ${WEBSERVER_DOC_ROOT}/moodle/admin/cli/install.php --chmod=02777 --non-interactive --agree-license --wwwroot=https://${DOMAIN_NAME} --dataroot=/home/${DOMAIN_NAME}/moodledata --dbtype=${DATABASE_CONNECT_EXTENSION} --dbhost=database --dbname=${DB_NAME} --dbuser=${DB_USER} --dbpass=${DB_PASSWORD} --fullname=${DOMAIN_NAME} --shortname=moodle --prefix=${DB_TABLE_PREFIX} --adminuser=admin --adminpass=admin123 --adminemail=${LETSENCRYPT_EMAIL} --supportemail=${LETSENCRYPT_EMAIL} && sed -i \"/$$CFG->directorypermissions = 02777;/a \\$$CFG->xsendfile = 'X-Accel-Redirect';\\n\\$$CFG->xsendfilealiases = array(\\n\\t'/dataroot/' => \\$$CFG->dataroot\\n);\" ${WEBSERVER_DOC_ROOT}/moodle/config.php && chmod 0644 ${WEBSERVER_DOC_ROOT}/moodle/config.php; fi && 
+            bash -c "apt-get update && sh /tmp/packagecheck.sh 'git zip unzip libpcre3-dev cron nano' && curl -sSL https://github.com/mlocati/docker-php-extension-installer/releases/latest/download/install-php-extensions -o - | sh -s gd mysqli intl zip xmlrpc soap exif opcache && if pecl install -p -- redis; then pecl install -o -f redis && rm -rf /tmp/pear && docker-php-ext-enable redis; fi;
+            if [ -z \"$$(ls -A ${WEBSERVER_DOC_ROOT}/moodle/config.php)\" ]; then git clone --depth 1 -b MOODLE_403_STABLE git://git.moodle.org/moodle.git && php ${WEBSERVER_DOC_ROOT}/moodle/admin/cli/install.php --chmod=02777 --non-interactive --agree-license --wwwroot=https://${DOMAIN_NAME} --dataroot=/home/${DOMAIN_NAME}/moodledata --dbtype=${DATABASE_CONNECT_EXTENSION} --dbhost=database --dbname=${DB_NAME} --dbuser=${DB_USER} --dbpass=${DB_PASSWORD} --fullname=${DOMAIN_NAME} --shortname=moodle --prefix=${DB_TABLE_PREFIX} --adminuser=admin --adminpass=admin123 --adminemail=${LETSENCRYPT_EMAIL} --supportemail=${LETSENCRYPT_EMAIL} && sed -i \"/$$CFG->directorypermissions = 02777;/a \\$$CFG->xsendfile = 'X-Accel-Redirect';\\n\\$$CFG->xsendfilealiases = array(\\n\\t'/dataroot/' => \\$$CFG->dataroot\\n);\" ${WEBSERVER_DOC_ROOT}/moodle/config.php && chmod 0644 ${WEBSERVER_DOC_ROOT}/moodle/config.php; fi &&
             (crontab -u root -l | grep -v -F \"${WEBSERVER_DOC_ROOT}/moodle/admin/cli/cron.php\" ; echo \"* * * * * php  /var/www/html/moodle/admin/cli/cron.php\") | crontab - || grep -qe 'date.timezone = ${LOCAL_TIMEZONE}' ${PHP_INI_DIR_PREFIX}/php/conf.d/security.ini || echo 'date.timezone = ${LOCAL_TIMEZONE}' >> ${PHP_INI_DIR_PREFIX}/php/conf.d/security.ini; php-fpm"
 
     webserver:
@@ -102,56 +102,8 @@ services:
             retries: 20
         environment:
             TZ: '${LOCAL_TIMEZONE}'
-        entrypoint: /bin/sh -c "certbot certonly --webroot --webroot-path /tmp/acme-challenge --rsa-key-size 4096 --non-interactive --agree-tos --no-eff-email --force-renewal --email ${LETSENCRYPT_EMAIL} -d ${DOMAIN_NAME} -d www.${DOMAIN_NAME} -d mail.${DOMAIN_NAME}; 
+        entrypoint: /bin/sh -c "certbot certonly --webroot --webroot-path /tmp/acme-challenge --rsa-key-size 4096 --non-interactive --agree-tos --no-eff-email --force-renewal --email ${LETSENCRYPT_EMAIL} -d ${DOMAIN_NAME} -d www.${DOMAIN_NAME} -d mail.${DOMAIN_NAME};
             trap exit TERM; while :; do certbot renew --dry-run; sleep 12h & wait $${!}; done;"
-
-    phpmyadmin:
-        depends_on:
-            certbot:
-                condition: service_healthy
-        image: phpmyadmin:latest
-        container_name: phpmyadmin
-        networks:
-            - backend
-            - frontend
-        volumes:
-            - type: bind
-              source: ./phpmyadmin/apache2/sites-available/default-ssl.conf
-              target: '${APACHE_CONFDIR_PREFIX}/sites-available/default-ssl.conf'
-            - type: bind
-              source: ./phpmyadmin/apache2/ports.conf
-              target: '${APACHE_CONFDIR_PREFIX}/ports.conf'
-            - type: bind
-              source: ./phpmyadmin/ssl-option/options-ssl-apache.conf
-              target: '${LETSENCRYPT_CONF_PREFIX}/options-ssl-apache.conf'
-            - type: bind
-              source: ./phpmyadmin/config.user.inc.php
-              target: '${PMA_CONF_FOLDER}/config.user.inc.php'
-            - type: bind
-              source: ./phpmyadmin/php/conf.d/security.ini
-              target: '${PHP_INI_DIR_PREFIX}/php/conf.d/security.ini'
-            - 'certbot-etc:${LETSENCRYPT_CONF_PREFIX}'
-        hostname: phpmyadmin
-        restart: unless-stopped
-        ports:
-            - '9090:443'
-        links:
-            - database
-        environment:
-            PMA_HOST: 'database'
-            PMA_PMADB: 'phpmyadmin'
-            PMA_CONTROLUSER: '${PMA_CONTROLUSER}'
-            PMA_CONTROLPASS: '${PMA_CONTROLPASS}'
-            MYSQL_ROOT_PASSWORD: '${MYSQL_ROOT_PASSWORD}'
-            UPLOAD_LIMIT: '${PMA_UPLOAD_LIMIT}'
-            MEMORY_LIMIT: '${PMA_MEMORY_LIMIT}'
-            TZ: '${LOCAL_TIMEZONE}'
-        command: >
-            bash -c "echo ${PMA_HTPASSWD_USERNAME}:phpmyadmin:$$( printf \"%s:%s:%s\" \"${PMA_HTPASSWD_USERNAME}\" \"phpmyadmin\" \"${PMA_HTPASSWD_PASSWORD}\" | md5sum | awk '{print $$1}' ) > ${PMA_CONF_FOLDER}/.htpasswd 
-            && printf 'AuthType Digest\\nAuthName \"phpmyadmin\"\\nAuthDigestProvider file\\nAuthUserFile ${PMA_CONF_FOLDER}/.htpasswd\\nRequire valid-user\\n' > ${WEBSERVER_DOC_ROOT}/.htaccess && a2enmod auth_digest; 
-            mkdir -p ${WEBSERVER_DOC_ROOT}/../upload && chown www-data:www-data ${WEBSERVER_DOC_ROOT}/../upload && chmod a+w ${WEBSERVER_DOC_ROOT}/../upload; mkdir -p ${WEBSERVER_DOC_ROOT}/../save && chown www-data:www-data ${WEBSERVER_DOC_ROOT}/../save && chmod a+w ${WEBSERVER_DOC_ROOT}/../save;
-            grep -qxF 'ServerName 127.0.0.1' ${APACHE_CONFDIR_PREFIX}/apache2.conf || echo -e '\\nServerName 127.0.0.1' >> ${APACHE_CONFDIR_PREFIX}/apache2.conf; grep -qe 'date.timezone = ${LOCAL_TIMEZONE}' ${PHP_INI_DIR_PREFIX}/php/conf.d/security.ini || echo 'date.timezone = ${LOCAL_TIMEZONE}' >> ${PHP_INI_DIR_PREFIX}/php/conf.d/security.ini; 
-            a2enmod ssl && a2ensite default-ssl && a2dissite 000-default && /docker-entrypoint.sh 'apache2-foreground'"
 
     database:
         image: ${DATABASE_IMAGE_NAME}:${DATABASE_VERSION}
@@ -164,7 +116,6 @@ services:
             - type: bind
               source: ./database/conf.d/z-${DATABASE_IMAGE_NAME}.cnf
               target: '${MYSQL_CONF_PREFIX}/z-${DATABASE_IMAGE_NAME}.cnf'
-            - 'phpmyadmin-sql:/docker-entrypoint-initdb.d'
         hostname: database
         restart: unless-stopped
         ports:
@@ -186,7 +137,7 @@ services:
             - "docker-volume-backup.stop-during-backup=true"
             - "docker-volume-backup.archive-pre=/bin/sh -c 'mysqldump -uroot -p${MYSQL_ROOT_PASSWORD} --all-databases > /tmp/backup/db_backup_data.sql'"
             - "docker-volume-backup.exec-label=database"
-        command: bash -c "${DATABASE_PACKAGE_MANAGER} && export PMA_CONTROLUSER=${PMA_CONTROLUSER} export PMA_CONTROLPASS=${PMA_CONTROLPASS} && envsubst '$$PMA_CONTROLUSER,$$PMA_CONTROLPASS' < /docker-entrypoint-initdb.d/create_tables.sql.template > /docker-entrypoint-initdb.d/create_tables.sql && docker-entrypoint.sh --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --default-authentication-plugin=${DATABASE_AUTHENTICATION_PLUGIN}"
+        command: bash -c "${DATABASE_PACKAGE_MANAGER} && docker-entrypoint.sh --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci --default-authentication-plugin=${DATABASE_AUTHENTICATION_PLUGIN}"
 
     redis:
         image: redis:latest
@@ -209,43 +160,6 @@ services:
             TZ: '${LOCAL_TIMEZONE}'
         command: "redis-server ${REDIS_CONF_PREFIX}/redis/redis.conf"
 
-    mail:
-        image: mailhog/mailhog:latest
-        container_name: mail
-        networks:
-            - backend
-        hostname: mail
-        restart: unless-stopped
-        ports:
-            - '1025:1025'
-            - '8025:8025'
-        environment:
-            MH_HOSTNAME: 'mail.${DOMAIN_NAME}'
-            MH_AUTH_FILE: '${DOMAIN_NAME}-auth'
-        entrypoint: sh -c "echo ${PMA_HTPASSWD_USERNAME}:$(MailHog bcrypt ${PMA_HTPASSWD_PASSWORD}) > ${DOMAIN_NAME}-auth && MailHog"
-
-    backup:
-        image: offen/docker-volume-backup:latest
-        container_name: backup
-        networks:
-            - backend
-        volumes:
-            - 'html:/backup/html:ro'
-            - 'db:/backup/db:ro'
-            - 'db-backup-data:/backup/db-backup-data:ro'
-            - '/var/run/docker.sock:/var/run/docker.sock:ro'
-            - type: bind
-              source: ./backups
-              target: /archive
-        hostname: backup
-        restart: unless-stopped
-        environment:
-            BACKUP_CRON_EXPRESSION: '20 01 * * *'
-            BACKUP_FILENAME: 'backup-%Y-%m-%dT%H-%M-%S.tar.gz'
-            BACKUP_RETENTION_DAYS: '7'
-            EXEC_LABEL: 'database'
-            #BACKUP_EXCLUDE_REGEXP: 'folder|folder|file|\\.log$$'
-
 networks:
     backend: null
     frontend: null
@@ -264,13 +178,6 @@ volumes:
         name: ${DATABASE_CONT_NAME}-data
     db-backup-data:
         name: ${DATABASE_CONT_NAME}-backup-data
-    phpmyadmin-sql:
-        name: phpmyadmin-sql
-        driver: local
-        driver_opts:
-            type: none
-            device: ${DIRECTORY_PATH}/database/phpmyadmin/sql
-            o: bind
     dtredis:
         name: redis-data
     certbot-etc:
